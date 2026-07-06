@@ -443,12 +443,12 @@ class ThreadActivity : SimpleActivity() {
                     if (isRecycleBin) {
                         messagesDB.getThreadMessagesFromRecycleBin(threadId)
                     } else if (isBlocked) {
-                        messagesDB.getThreadMessagesFromBlocked(threadId)
+                        messagesDB.getThreadBlockedMessages(threadId).map { it.toMessage() }
                     } else {
                         if (config.useRecycleBin) {
                             messagesDB.getNonRecycledThreadMessages(threadId)
                         } else {
-                            messagesDB.getNonBlockedThreadMessages(threadId)
+                            messagesDB.getThreadMessages(threadId)
                         }
                     }
                 )
@@ -502,8 +502,6 @@ class ThreadActivity : SimpleActivity() {
                     val recycledMessages = messagesDB.getThreadMessagesFromRecycleBin(threadId)
                     messages = messages.filterNotInByKey(recycledMessages) { it.getStableId() }
                 }
-                val blockedMessages = messagesDB.getThreadMessagesFromBlocked(threadId)
-                messages = messages.filterNotInByKey(blockedMessages) { it.getStableId() }
             }
 
             val hasParticipantWithoutName = participants.any { contact ->
@@ -809,18 +807,15 @@ class ThreadActivity : SimpleActivity() {
         val older = getMessages(threadId, cutoff)
             .filterNotInByKey(messages) { it.getStableId() }
 
-        val blockedMessages = messagesDB.getThreadMessagesFromBlocked(threadId)
-        val olderFiltered = older.filterNotInByKey(blockedMessages) { it.getStableId() }
-
-        if (older.isEmpty() || olderFiltered.isEmpty()) {
+        if (older.isEmpty()) {
             allMessagesFetched = true
         }
 
-        if (olderFiltered.isNotEmpty()) {
-            messages.addAll(0, olderFiltered)
+        if (older.isNotEmpty()) {
+            messages.addAll(0, older)
         }
 
-        return olderFiltered
+        return older
     }
 
     private fun loadConversation() {

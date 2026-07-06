@@ -916,19 +916,36 @@ fun Context.emptyBlockedMessages() {
 }
 
 fun Context.emptyBlockedMessagesForConversation(threadId: Long) {
-    val messages = messagesDB.getThreadMessagesFromBlocked(threadId)
+    val messages = messagesDB.getThreadBlockedMessages(threadId)
     for (message in messages) {
         deleteMessage(message.id, message.isMMS)
     }
 }
 
 fun Context.restoreAllMessagesFromBlockedForConversation(threadId: Long) {
-    messagesDB.deleteThreadMessagesFromBlocked(threadId)
+    val blockedMessages = messagesDB.getThreadBlockedMessages(threadId)
+    for (blockedMessage in blockedMessages) {
+        messagesDB.insertOrUpdate(blockedMessage.toMessage())
+    }
+    messagesDB.deleteThreadBlockedMessages(threadId)
 }
 
+/**
+ * Moves a message from the main [messages] table into the [blocked_messages] table.
+ * This is used when a previously-normal message needs to be blocked after the fact
+ * (e.g. the user blocks a number that already has messages in the main table).
+ * New incoming blocked messages are inserted directly via [MessagesDao.insertBlockedMessage]
+ * and never touch the main table.
+ */
 fun Context.moveMessageToBlocked(id: Long) {
     try {
-        messagesDB.insertBlockedEntry(BlockedMessage(id, System.currentTimeMillis()))
+        val message = messagesDB.getAll().firstOrNull { it.id == id }
+        if (message != null) {
+            messagesDB.insertBlockedMessage(
+                BlockedMessage.fromMessage(message, System.currentTimeMillis())
+            )
+            messagesDB.deleteFromMessages(id)
+        }
     } catch (e: Exception) {
         showErrorToast(e)
     }
@@ -936,7 +953,12 @@ fun Context.moveMessageToBlocked(id: Long) {
 
 fun Context.restoreMessageFromBlocked(id: Long) {
     try {
-        messagesDB.deleteFromBlocked(id)
+        val blockedMessages = messagesDB.getAllBlockedMessages()
+        val blockedMessage = blockedMessages.firstOrNull { it.id == id }
+        if (blockedMessage != null) {
+            messagesDB.insertOrUpdate(blockedMessage.toMessage())
+            messagesDB.deleteFromBlockedMessages(id)
+        }
     } catch (e: Exception) {
         showErrorToast(e)
     }

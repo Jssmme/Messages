@@ -19,7 +19,7 @@ interface MessagesDao {
     fun insertRecycleBinEntry(recycleBinMessage: RecycleBinMessage)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    fun insertBlockedEntry(blockedMessage: BlockedMessage)
+    fun insertBlockedMessage(blockedMessage: BlockedMessage)
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     fun insertOrIgnore(message: Message): Long
@@ -30,34 +30,31 @@ interface MessagesDao {
     @Query("SELECT * FROM messages")
     fun getAll(): List<Message>
 
-    @Query("SELECT messages.* FROM messages LEFT OUTER JOIN recycle_bin_messages ON messages.id = recycle_bin_messages.id LEFT OUTER JOIN blocked_messages ON messages.id = blocked_messages.id WHERE recycle_bin_messages.id IS NOT NULL")
+    @Query("SELECT messages.* FROM messages LEFT OUTER JOIN recycle_bin_messages ON messages.id = recycle_bin_messages.id WHERE recycle_bin_messages.id IS NOT NULL")
     fun getAllRecycleBinMessages(): List<Message>
 
-    @Query("SELECT messages.* FROM messages LEFT OUTER JOIN recycle_bin_messages ON messages.id = recycle_bin_messages.id LEFT OUTER JOIN blocked_messages ON messages.id = blocked_messages.id WHERE blocked_messages.id IS NOT NULL")
-    fun getAllBlockedMessages(): List<Message>
+    @Query("SELECT * FROM blocked_messages")
+    fun getAllBlockedMessages(): List<BlockedMessage>
 
-    @Query("SELECT messages.* FROM messages LEFT OUTER JOIN recycle_bin_messages ON messages.id = recycle_bin_messages.id LEFT OUTER JOIN blocked_messages ON messages.id = blocked_messages.id WHERE recycle_bin_messages.id IS NULL AND blocked_messages.id IS NULL AND is_scheduled = 1")
+    @Query("SELECT messages.* FROM messages LEFT OUTER JOIN recycle_bin_messages ON messages.id = recycle_bin_messages.id WHERE recycle_bin_messages.id IS NULL AND is_scheduled = 1")
     fun getAllScheduledMessages(): List<Message>
 
-    @Query("SELECT messages.* FROM messages LEFT OUTER JOIN recycle_bin_messages ON messages.id = recycle_bin_messages.id LEFT OUTER JOIN blocked_messages ON messages.id = blocked_messages.id WHERE recycle_bin_messages.id IS NOT NULL AND recycle_bin_messages.deleted_ts < :timestamp")
+    @Query("SELECT messages.* FROM messages LEFT OUTER JOIN recycle_bin_messages ON messages.id = recycle_bin_messages.id WHERE recycle_bin_messages.id IS NOT NULL AND recycle_bin_messages.deleted_ts < :timestamp")
     fun getOldRecycleBinMessages(timestamp: Long): List<Message>
 
     @Query("SELECT * FROM messages WHERE thread_id = :threadId")
     fun getThreadMessages(threadId: Long): List<Message>
 
-    @Query("SELECT messages.* FROM messages LEFT OUTER JOIN recycle_bin_messages ON messages.id = recycle_bin_messages.id LEFT OUTER JOIN blocked_messages ON messages.id = blocked_messages.id WHERE recycle_bin_messages.id IS NULL AND blocked_messages.id IS NULL AND thread_id = :threadId")
+    @Query("SELECT messages.* FROM messages LEFT OUTER JOIN recycle_bin_messages ON messages.id = recycle_bin_messages.id WHERE recycle_bin_messages.id IS NULL AND thread_id = :threadId")
     fun getNonRecycledThreadMessages(threadId: Long): List<Message>
 
-    @Query("SELECT messages.* FROM messages LEFT OUTER JOIN blocked_messages ON messages.id = blocked_messages.id WHERE blocked_messages.id IS NULL AND thread_id = :threadId")
-    fun getNonBlockedThreadMessages(threadId: Long): List<Message>
+    @Query("SELECT * FROM blocked_messages WHERE thread_id = :threadId")
+    fun getThreadBlockedMessages(threadId: Long): List<BlockedMessage>
 
-    @Query("SELECT messages.* FROM messages LEFT OUTER JOIN recycle_bin_messages ON messages.id = recycle_bin_messages.id LEFT OUTER JOIN blocked_messages ON messages.id = blocked_messages.id WHERE recycle_bin_messages.id IS NOT NULL AND thread_id = :threadId")
+    @Query("SELECT messages.* FROM messages LEFT OUTER JOIN recycle_bin_messages ON messages.id = recycle_bin_messages.id WHERE recycle_bin_messages.id IS NOT NULL AND thread_id = :threadId")
     fun getThreadMessagesFromRecycleBin(threadId: Long): List<Message>
 
-    @Query("SELECT messages.* FROM messages LEFT OUTER JOIN recycle_bin_messages ON messages.id = recycle_bin_messages.id LEFT OUTER JOIN blocked_messages ON messages.id = blocked_messages.id WHERE blocked_messages.id IS NOT NULL AND thread_id = :threadId")
-    fun getThreadMessagesFromBlocked(threadId: Long): List<Message>
-
-    @Query("SELECT messages.* FROM messages LEFT OUTER JOIN recycle_bin_messages ON messages.id = recycle_bin_messages.id LEFT OUTER JOIN blocked_messages ON messages.id = blocked_messages.id WHERE recycle_bin_messages.id IS NULL AND blocked_messages.id IS NULL AND thread_id = :threadId AND is_scheduled = 1")
+    @Query("SELECT messages.* FROM messages LEFT OUTER JOIN recycle_bin_messages ON messages.id = recycle_bin_messages.id WHERE recycle_bin_messages.id IS NULL AND thread_id = :threadId AND is_scheduled = 1")
     fun getScheduledThreadMessages(threadId: Long): List<Message>
 
     @Query("SELECT * FROM messages WHERE thread_id = :threadId AND id = :messageId AND is_scheduled = 1")
@@ -85,7 +82,7 @@ interface MessagesDao {
     fun delete(id: Long) {
         deleteFromMessages(id)
         deleteFromRecycleBin(id)
-        deleteFromBlocked(id)
+        deleteFromBlockedMessages(id)
     }
 
     @Query("DELETE FROM messages WHERE id = :id")
@@ -95,12 +92,12 @@ interface MessagesDao {
     fun deleteFromRecycleBin(id: Long)
 
     @Query("DELETE FROM blocked_messages WHERE id = :id")
-    fun deleteFromBlocked(id: Long)
+    fun deleteFromBlockedMessages(id: Long)
 
     @Transaction
     fun deleteThreadMessages(threadId: Long) {
         deleteThreadMessagesFromRecycleBin(threadId)
-        deleteThreadMessagesFromBlocked(threadId)
+        deleteThreadBlockedMessages(threadId)
         deleteAllThreadMessages(threadId)
     }
 
@@ -110,12 +107,12 @@ interface MessagesDao {
     @Query("DELETE FROM recycle_bin_messages WHERE id IN (SELECT id FROM messages WHERE thread_id = :threadId)")
     fun deleteThreadMessagesFromRecycleBin(threadId: Long)
 
-    @Query("DELETE FROM blocked_messages WHERE id IN (SELECT id FROM messages WHERE thread_id = :threadId)")
-    fun deleteThreadMessagesFromBlocked(threadId: Long)
+    @Query("DELETE FROM blocked_messages WHERE thread_id = :threadId")
+    fun deleteThreadBlockedMessages(threadId: Long)
 
     @Query("DELETE FROM messages")
     fun deleteAll()
 
     @Query("DELETE FROM blocked_messages")
-    fun deleteAllBlocked()
+    fun deleteAllBlockedMessages()
 }

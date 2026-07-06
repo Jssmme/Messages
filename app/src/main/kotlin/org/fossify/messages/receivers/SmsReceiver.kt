@@ -20,13 +20,13 @@ import org.fossify.messages.extensions.getThreadId
 import org.fossify.messages.extensions.insertNewSMS
 import org.fossify.messages.extensions.insertOrUpdateConversation
 import org.fossify.messages.extensions.messagesDB
-import org.fossify.messages.extensions.moveMessageToBlocked
 import org.fossify.messages.extensions.shouldUnarchive
 import org.fossify.messages.extensions.showReceivedMessageNotification
 import org.fossify.messages.extensions.updateConversationArchivedStatus
 import org.fossify.messages.helpers.ReceiverUtils.isMessageFilteredOut
 import org.fossify.messages.helpers.refreshConversations
 import org.fossify.messages.helpers.refreshMessages
+import org.fossify.messages.models.BlockedMessage
 import org.fossify.messages.models.Conversation
 import org.fossify.messages.models.Message
 
@@ -250,8 +250,9 @@ class SmsReceiver : BroadcastReceiver() {
             subscriptionId = subscriptionId
         )
 
-        appContext.messagesDB.insertOrUpdate(message)
-        appContext.moveMessageToBlocked(newMessageId)
+        appContext.messagesDB.insertBlockedMessage(
+            BlockedMessage.fromMessage(message, System.currentTimeMillis())
+        )
 
         refreshConversations()
     }

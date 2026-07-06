@@ -32,7 +32,7 @@ import org.fossify.messages.models.RecycleBinMessage
         BlockedMessage::class,
         Draft::class
     ],
-    version = 11
+    version = 12
 )
 @TypeConverters(Converters::class)
 abstract class MessagesDatabase : RoomDatabase() {
@@ -70,6 +70,7 @@ abstract class MessagesDatabase : RoomDatabase() {
                             .addMigrations(MIGRATION_8_9)
                             .addMigrations(MIGRATION_9_10)
                             .addMigrations(MIGRATION_10_11)
+                            .addMigrations(MIGRATION_11_12)
                             .build()
                     }
                 }
@@ -172,6 +173,53 @@ abstract class MessagesDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.apply {
                     execSQL("CREATE TABLE IF NOT EXISTS `blocked_messages` (`id` INTEGER NOT NULL PRIMARY KEY, `blocked_ts` INTEGER NOT NULL)")
+                    execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_blocked_messages_id` ON `blocked_messages` (`id`)")
+                }
+            }
+        }
+
+        private val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.apply {
+                    // Create the new blocked_messages table with full message data
+                    execSQL(
+                        "CREATE TABLE IF NOT EXISTS `blocked_messages_new` (" +
+                            "`id` INTEGER NOT NULL PRIMARY KEY, " +
+                            "`body` TEXT NOT NULL, " +
+                            "`type` INTEGER NOT NULL, " +
+                            "`status` INTEGER NOT NULL, " +
+                            "`participants` TEXT NOT NULL, " +
+                            "`date` INTEGER NOT NULL, " +
+                            "`read` INTEGER NOT NULL, " +
+                            "`thread_id` INTEGER NOT NULL, " +
+                            "`is_mms` INTEGER NOT NULL, " +
+                            "`attachment` TEXT, " +
+                            "`sender_phone_number` TEXT NOT NULL, " +
+                            "`sender_name` TEXT NOT NULL, " +
+                            "`sender_photo_uri` TEXT NOT NULL, " +
+                            "`subscription_id` INTEGER NOT NULL, " +
+                            "`is_scheduled` INTEGER NOT NULL DEFAULT 0, " +
+                            "`blocked_ts` INTEGER NOT NULL)"
+                    )
+
+                    // Copy blocked message data from messages table joined with old blocked_messages
+                    execSQL(
+                        "INSERT OR IGNORE INTO `blocked_messages_new` (" +
+                            "`id`, `body`, `type`, `status`, `participants`, `date`, `read`, " +
+                            "`thread_id`, `is_mms`, `attachment`, `sender_phone_number`, " +
+                            "`sender_name`, `sender_photo_uri`, `subscription_id`, `is_scheduled`, `blocked_ts`) " +
+                            "SELECT m.`id`, m.`body`, m.`type`, m.`status`, m.`participants`, m.`date`, m.`read`, " +
+                            "m.`thread_id`, m.`is_mms`, m.`attachment`, m.`sender_phone_number`, " +
+                            "m.`sender_name`, m.`sender_photo_uri`, m.`subscription_id`, m.`is_scheduled`, b.`blocked_ts` " +
+                            "FROM `messages` m INNER JOIN `blocked_messages` b ON m.`id` = b.`id`"
+                    )
+
+                    // Delete blocked messages from the main messages table
+                    execSQL("DELETE FROM `messages` WHERE `id` IN (SELECT `id` FROM `blocked_messages`)")
+
+                    // Drop old blocked_messages table and rename the new one
+                    execSQL("DROP TABLE `blocked_messages`")
+                    execSQL("ALTER TABLE `blocked_messages_new` RENAME TO `blocked_messages`")
                     execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_blocked_messages_id` ON `blocked_messages` (`id`)")
                 }
             }

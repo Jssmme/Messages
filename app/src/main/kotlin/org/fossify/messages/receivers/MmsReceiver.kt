@@ -18,13 +18,13 @@ import org.fossify.messages.extensions.getLatestMMS
 import org.fossify.messages.extensions.getNameFromAddress
 import org.fossify.messages.extensions.insertOrUpdateConversation
 import org.fossify.messages.extensions.messagesDB
-import org.fossify.messages.extensions.moveMessageToBlocked
 import org.fossify.messages.extensions.shouldUnarchive
 import org.fossify.messages.extensions.showReceivedMessageNotification
 import org.fossify.messages.extensions.updateConversationArchivedStatus
 import org.fossify.messages.helpers.ReceiverUtils.isMessageFilteredOut
 import org.fossify.messages.helpers.refreshConversations
 import org.fossify.messages.helpers.refreshMessages
+import org.fossify.messages.models.BlockedMessage
 import org.fossify.messages.models.Conversation
 import org.fossify.messages.models.Message
 
@@ -132,8 +132,9 @@ class MmsReceiver : MmsReceivedReceiver() {
         }
 
         val readMms = mms.copy(read = true)
-        context.messagesDB.insertOrUpdate(readMms)
-        context.moveMessageToBlocked(mms.id)
+        context.messagesDB.insertBlockedMessage(
+            BlockedMessage.fromMessage(readMms, System.currentTimeMillis())
+        )
 
         // Only create the conversation in our DB if it doesn't already exist.
         // Don't update an existing conversation — the blocked message should not

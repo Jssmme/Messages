@@ -336,7 +336,7 @@ class MainActivity : SimpleActivity() {
                 val isTemporaryThread = cachedConversation.isScheduled
                 val isConversationDeleted = !conversations.map { it.threadId }.contains(threadId)
                 val hasBlockedMessages = try {
-                    messagesDB.getThreadMessagesFromBlocked(threadId).isNotEmpty()
+                    messagesDB.getThreadBlockedMessages(threadId).isNotEmpty()
                 } catch (_: Exception) {
                     false
                 }
