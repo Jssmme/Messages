@@ -70,6 +70,7 @@ import org.fossify.messages.messaging.MessagingUtils.Companion.ADDRESS_SEPARATOR
 import org.fossify.messages.messaging.SmsSender
 import org.fossify.messages.messaging.scheduleMessage
 import org.fossify.messages.models.Attachment
+import org.fossify.messages.models.BlockedMessage
 import org.fossify.messages.models.Conversation
 import org.fossify.messages.models.Draft
 import org.fossify.messages.models.Message
@@ -904,6 +905,40 @@ fun Context.emptyMessagesRecycleBin() {
     val messages = messagesDB.getAllRecycleBinMessages()
     for (message in messages) {
         deleteMessage(message.id, message.isMMS)
+    }
+}
+
+fun Context.emptyBlockedMessages() {
+    val messages = messagesDB.getAllBlockedMessages()
+    for (message in messages) {
+        deleteMessage(message.id, message.isMMS)
+    }
+}
+
+fun Context.emptyBlockedMessagesForConversation(threadId: Long) {
+    val messages = messagesDB.getThreadMessagesFromBlocked(threadId)
+    for (message in messages) {
+        deleteMessage(message.id, message.isMMS)
+    }
+}
+
+fun Context.restoreAllMessagesFromBlockedForConversation(threadId: Long) {
+    messagesDB.deleteThreadMessagesFromBlocked(threadId)
+}
+
+fun Context.moveMessageToBlocked(id: Long) {
+    try {
+        messagesDB.insertBlockedEntry(BlockedMessage(id, System.currentTimeMillis()))
+    } catch (e: Exception) {
+        showErrorToast(e)
+    }
+}
+
+fun Context.restoreMessageFromBlocked(id: Long) {
+    try {
+        messagesDB.deleteFromBlocked(id)
+    } catch (e: Exception) {
+        showErrorToast(e)
     }
 }
 

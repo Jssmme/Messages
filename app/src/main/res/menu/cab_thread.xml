@@ -4,6 +4,12 @@
     xmlns:tools="http://schemas.android.com/tools"
     tools:ignore="AppCompatResource,AlwaysShowAction">
     <item
+        android:id="@+id/cab_restore"
+        android:icon="@drawable/ic_unarchive_vector"
+        android:showAsAction="always"
+        android:title="@string/restore"
+        app:showAsAction="always" />
+    <item
         android:id="@+id/cab_copy_to_clipboard"
         android:icon="@drawable/ic_copy_vector"
         android:showAsAction="always"
@@ -48,10 +54,5 @@
         android:icon="@drawable/ic_info_vector"
         android:showAsAction="never"
         android:title="@string/properties"
-        app:showAsAction="never" />
-    <item
-        android:id="@+id/cab_restore"
-        android:showAsAction="never"
-        android:title="@string/restore"
         app:showAsAction="never" />
 </menu>

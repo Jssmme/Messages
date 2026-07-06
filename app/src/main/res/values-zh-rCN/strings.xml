@@ -123,6 +123,12 @@
     <string name="export_whitelist_keywords">导出白名单关键词</string>
     <string name="import_whitelist_keywords">导入白名单关键词</string>
     <string name="keep_conversations_archived">保持对话归档状态</string>
+    <string name="blocked_messages">已屏蔽的信息</string>
+    <string name="show_blocked_messages">显示已屏蔽的信息</string>
+    <string name="no_blocked_conversations">未找到已屏蔽的对话</string>
+    <string name="empty_blocked_messages">删除所有已屏蔽的信息</string>
+    <string name="empty_blocked_messages_confirmation">是否确定要删除所有已屏蔽的信息？这些信息将会永久丢失。</string>
+    <string name="unblock">取消屏蔽</string>
     <string name="faq_4_title">为何我的群发信息对接收者来说显示为单独的短信？</string>
     <string name="faq_4_text">您需要在应用设置中启用“将群发信息作为彩信发送”。这将确保群发信息以彩信形式发送，使所有参与者都能看到彼此的回复。</string>
 </resources>

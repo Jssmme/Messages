@@ -31,6 +31,7 @@ import org.fossify.commons.extensions.getProperBackgroundColor
 import org.fossify.commons.extensions.getProperPrimaryColor
 import org.fossify.commons.extensions.getProperTextColor
 import org.fossify.commons.extensions.hideKeyboard
+import org.fossify.commons.extensions.isNumberBlocked
 import org.fossify.commons.extensions.openNotificationSettings
 import org.fossify.commons.extensions.toast
 import org.fossify.commons.extensions.underlineText
@@ -179,6 +180,7 @@ class MainActivity : SimpleActivity() {
             when (menuItem.itemId) {
                 R.id.show_recycle_bin -> launchRecycleBin()
                 R.id.show_archived -> launchArchivedConversations()
+                R.id.show_blocked -> launchBlockedConversations()
                 R.id.settings -> launchSettings()
                 R.id.about -> launchAbout()
                 else -> return@setOnMenuItemClickListener false
@@ -289,7 +291,9 @@ class MainActivity : SimpleActivity() {
     private fun getCachedConversations() {
         ensureBackgroundThread {
             val conversations = try {
-                conversationsDB.getNonArchived().toMutableList() as ArrayList<Conversation>
+                conversationsDB.getNonArchived()
+                    .filterNot { isNumberBlocked(it.phoneNumber) }
+                    .toMutableList() as ArrayList<Conversation>
             } catch (_: Exception) {
                 ArrayList()
             }
@@ -331,7 +335,12 @@ class MainActivity : SimpleActivity() {
 
                 val isTemporaryThread = cachedConversation.isScheduled
                 val isConversationDeleted = !conversations.map { it.threadId }.contains(threadId)
-                if (isConversationDeleted && !isTemporaryThread) {
+                val hasBlockedMessages = try {
+                    messagesDB.getThreadMessagesFromBlocked(threadId).isNotEmpty()
+                } catch (_: Exception) {
+                    false
+                }
+                if (isConversationDeleted && !isTemporaryThread && !hasBlockedMessages) {
                     conversationsDB.deleteThreadId(threadId)
                 }
 
@@ -364,7 +373,8 @@ class MainActivity : SimpleActivity() {
                 }
             }
 
-            val allConversations = conversationsDB.getNonArchived() as ArrayList<Conversation>
+            val allConversations = conversationsDB.getNonArchived()
+                .filterNot { isNumberBlocked(it.phoneNumber) } as ArrayList<Conversation>
             runOnUiThread {
                 setupConversations(allConversations)
             }
@@ -619,6 +629,11 @@ class MainActivity : SimpleActivity() {
     private fun launchArchivedConversations() {
         hideKeyboard()
         startActivity(Intent(applicationContext, ArchivedConversationsActivity::class.java))
+    }
+
+    private fun launchBlockedConversations() {
+        hideKeyboard()
+        startActivity(Intent(applicationContext, BlockedConversationsActivity::class.java))
     }
 
     private fun launchSettings() {

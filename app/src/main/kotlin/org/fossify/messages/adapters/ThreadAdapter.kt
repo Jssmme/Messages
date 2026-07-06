@@ -94,7 +94,8 @@ class ThreadAdapter(
     recyclerView: MyRecyclerView,
     itemClick: (Any) -> Unit,
     val isRecycleBin: Boolean,
-    val deleteMessages: (messages: List<Message>, toRecycleBin: Boolean, fromRecycleBin: Boolean) -> Unit
+    val isBlocked: Boolean = false,
+    val deleteMessages: (messages: List<Message>, toRecycleBin: Boolean, fromRecycleBin: Boolean, fromBlocked: Boolean) -> Unit
 ) : MyRecyclerViewListAdapter<ThreadItem>(activity, recyclerView, ThreadItemDiffCallback(), itemClick) {
     private var fontSize = activity.getTextSize()
 
@@ -131,7 +132,7 @@ class ThreadAdapter(
             findItem(R.id.cab_forward_message).isVisible = isOneItemSelected
             findItem(R.id.cab_select_text).isVisible = isOneItemSelected && hasText
             findItem(R.id.cab_properties).isVisible = isOneItemSelected
-            findItem(R.id.cab_restore).isVisible = isRecycleBin
+            findItem(R.id.cab_restore).isVisible = isRecycleBin || isBlocked
         }
     }
 
@@ -281,19 +282,19 @@ class ThreadAdapter(
             return
         }
 
-        val baseString = if (activity.config.useRecycleBin && !isRecycleBin) {
+        val baseString = if (activity.config.useRecycleBin && !isRecycleBin && !isBlocked) {
             org.fossify.commons.R.string.move_to_recycle_bin_confirmation
         } else {
             org.fossify.commons.R.string.deletion_confirmation
         }
         val question = String.format(resources.getString(baseString), items)
 
-        DeleteConfirmationDialog(activity, question, activity.config.useRecycleBin && !isRecycleBin) { skipRecycleBin ->
+        DeleteConfirmationDialog(activity, question, activity.config.useRecycleBin && !isRecycleBin && !isBlocked) { skipRecycleBin ->
             ensureBackgroundThread {
                 val messagesToRemove = getSelectedItems()
                 if (messagesToRemove.isNotEmpty()) {
-                    val toRecycleBin = !skipRecycleBin && activity.config.useRecycleBin && !isRecycleBin
-                    deleteMessages(messagesToRemove.filterIsInstance<Message>(), toRecycleBin, false)
+                    val toRecycleBin = !skipRecycleBin && activity.config.useRecycleBin && !isRecycleBin && !isBlocked
+                    deleteMessages(messagesToRemove.filterIsInstance<Message>(), toRecycleBin, false, false)
                 }
             }
         }
@@ -317,7 +318,11 @@ class ThreadAdapter(
             ensureBackgroundThread {
                 val messagesToRestore = getSelectedItems()
                 if (messagesToRestore.isNotEmpty()) {
-                    deleteMessages(messagesToRestore.filterIsInstance<Message>(), false, true)
+                    if (isBlocked) {
+                        deleteMessages(messagesToRestore.filterIsInstance<Message>(), false, false, true)
+                    } else {
+                        deleteMessages(messagesToRestore.filterIsInstance<Message>(), false, true, false)
+                    }
                 }
             }
         }

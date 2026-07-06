@@ -63,6 +63,13 @@
             android:parentActivityName=".activities.MainActivity" />
 
         <activity
+            android:name=".activities.BlockedConversationsActivity"
+            android:configChanges="orientation"
+            android:exported="true"
+            android:label="@string/blocked_messages"
+            android:parentActivityName=".activities.MainActivity" />
+
+        <activity
             android:name=".activities.ThreadActivity"
             android:configChanges="orientation"
             android:exported="false"
