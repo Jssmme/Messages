@@ -26,7 +26,10 @@ import org.fossify.messages.models.Message
 
 class MmsReceiver : MmsReceivedReceiver() {
 
+    private var lastSenderAddress: String = ""
+
     override fun isAddressBlocked(context: Context, address: String): Boolean {
+        lastSenderAddress = address
         if (context.isNumberBlocked(address)) return true
         if (context.baseConfig.blockUnknownNumbers) {
             val privateCursor = context.getMyContactsCursor(favoritesOnly = false, withPhoneNumbersOnly = true)
@@ -38,7 +41,7 @@ class MmsReceiver : MmsReceivedReceiver() {
     }
 
     override fun isContentBlocked(context: Context, content: String): Boolean {
-        return isMessageFilteredOut(context, content)
+        return isMessageFilteredOut(context, content, lastSenderAddress)
     }
 
     override fun onMessageReceived(context: Context, messageUri: Uri) {
