@@ -3,7 +3,7 @@
     <string name="type_a_message">输入信息…</string>
     <string name="message_not_sent_short">信息发送失败</string>
     <string name="message_not_sent_touch_retry">发送失败。触摸即可重试。</string>
-    <string name="message_sending_error">您发送给“%s”的信息发送失败</string>
+    <string name="message_sending_error">您发送给"%s"的信息发送失败</string>
     <string name="add_person">添加人</string>
     <string name="attachment">附件</string>
     <string name="no_conversations_found">未找到保存的对话</string>
@@ -105,7 +105,7 @@
     <string name="carrier_send_error">无法发送信息，运营商错误</string>
     <string name="unknown_error_occurred_sending_message">无法发送信息，错误代码：%d</string>
     <string name="invalid_short_code">无法回复此类短代码</string>
-    <string name="invalid_short_code_desc">您只能回复类似“503501”这样的纯数字短代码，而不能回复类似“AB-CD0”这样包含字母和数字混合的代码。</string>
+    <string name="invalid_short_code_desc">您只能回复类似"503501"这样的纯数字短代码，而不能回复类似"AB-CD0"这样包含字母和数字混合的代码。</string>
     <string name="attachment_sized_exceeds_max_limit">附件大小超出了彩信上限</string>
     <string name="sim_card_not_available">SIM 卡不可用</string>
     <string name="couldnt_download_mms">无法下载彩信</string>
@@ -130,5 +130,8 @@
     <string name="empty_blocked_messages_confirmation">是否确定要删除所有已屏蔽的信息？这些信息将会永久丢失。</string>
     <string name="unblock">取消屏蔽</string>
     <string name="faq_4_title">为何我的群发信息对接收者来说显示为单独的短信？</string>
-    <string name="faq_4_text">您需要在应用设置中启用“将群发信息作为彩信发送”。这将确保群发信息以彩信形式发送，使所有参与者都能看到彼此的回复。</string>
+    <string name="faq_4_text">您需要在应用设置中启用"将群发信息作为彩信发送"。这将确保群发信息以彩信形式发送，使所有参与者都能看到彼此的回复。</string>
+    <string name="deselect_all">全不选</string>
+    <string name="delete_search_results_confirmation">确定要删除选中的信息吗？</string>
+    <string name="delete_search_results_final_confirmation">此操作无法撤销。确定要永久删除选中的信息吗？</string>
 </resources>

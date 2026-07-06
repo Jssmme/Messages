@@ -5,7 +5,7 @@
     android:id="@+id/search_result_holder"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:background="?attr/selectableItemBackground"
+    android:background="@drawable/selector"
     android:minHeight="@dimen/two_line_list_item_min_height"
     android:paddingStart="@dimen/activity_margin"
     android:paddingTop="@dimen/medium_margin"

@@ -593,7 +593,8 @@ class MainActivity : SimpleActivity() {
                 snippet = message.body,
                 date = date,
                 threadId = message.threadId,
-                photoUri = message.senderPhotoUri
+                photoUri = message.senderPhotoUri,
+                isMMS = message.isMMS
             )
             searchResults.add(searchResult)
         }
