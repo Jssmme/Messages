@@ -179,12 +179,13 @@ class SmsReceiver : BroadcastReceiver() {
         val date = System.currentTimeMillis()
         val threadId = appContext.getThreadId(address)
 
+        // Insert as read so the system thread doesn't show a false unread indicator
         val newMessageId = appContext.insertNewSMS(
             address = address,
             subject = subject,
             body = body,
             date = date,
-            read = 0,
+            read = 1,
             threadId = threadId,
             type = Telephony.Sms.MESSAGE_TYPE_INBOX,
             subscriptionId = subscriptionId
@@ -196,19 +197,21 @@ class SmsReceiver : BroadcastReceiver() {
 
         val photoUri = SimpleContactsHelper(appContext).getPhotoUriFromPhoneNumber(address)
 
-        // getConversations filters out blocked numbers, so for blocked numbers
-        // we need to create/update the conversation manually in our DB
-        val conversation = appContext.getConversations(threadId).firstOrNull()
-        if (conversation != null) {
-            runCatching { appContext.insertOrUpdateConversation(conversation) }
-        } else {
-            val existingConv = appContext.conversationsDB.getConversationWithThreadId(threadId)
-            if (existingConv == null) {
+        // Only create the conversation in our DB if it doesn't already exist.
+        // Don't update an existing conversation — the blocked message should not
+        // change the snippet, date, or read status shown in the normal conversation list.
+        val existingConv = appContext.conversationsDB.getConversationWithThreadId(threadId)
+        if (existingConv == null) {
+            val conversation = appContext.getConversations(threadId).firstOrNull()
+            if (conversation != null) {
+                val readConv = conversation.copy(read = true, unreadCount = 0)
+                runCatching { appContext.conversationsDB.insertOrUpdate(readConv) }
+            } else {
                 val newConversation = Conversation(
                     threadId = threadId,
                     snippet = body,
                     date = (date / 1000).toInt(),
-                    read = false,
+                    read = true,
                     title = senderName,
                     photoUri = photoUri,
                     isGroupConversation = false,
@@ -237,7 +240,7 @@ class SmsReceiver : BroadcastReceiver() {
             status = status,
             participants = arrayListOf(participant),
             date = (date / 1000).toInt(),
-            read = false,
+            read = true,
             threadId = threadId,
             isMMS = false,
             attachment = null,

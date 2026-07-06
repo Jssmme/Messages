@@ -117,22 +117,39 @@ class MmsReceiver : MmsReceivedReceiver() {
 
         val photoUri = SimpleContactsHelper(context).getPhotoUriFromPhoneNumber(address)
 
-        context.messagesDB.insertOrUpdate(mms)
+        // Mark the MMS as read in the system DB so the system thread doesn't show
+        // a false unread indicator for a blocked message.
+        runCatching {
+            val values = android.content.ContentValues().apply {
+                put(android.provider.Telephony.Mms.READ, 1)
+            }
+            context.contentResolver.update(
+                android.net.Uri.parse("content://mms/${mms.id}"),
+                values,
+                null,
+                null
+            )
+        }
+
+        val readMms = mms.copy(read = true)
+        context.messagesDB.insertOrUpdate(readMms)
         context.moveMessageToBlocked(mms.id)
 
-        // getConversations filters out blocked numbers, so for blocked numbers
-        // we need to create/update the conversation manually in our DB
-        val conversation = context.getConversations(mms.threadId).firstOrNull()
-        if (conversation != null) {
-            runCatching { context.insertOrUpdateConversation(conversation) }
-        } else {
-            val existingConv = context.conversationsDB.getConversationWithThreadId(mms.threadId)
-            if (existingConv == null) {
+        // Only create the conversation in our DB if it doesn't already exist.
+        // Don't update an existing conversation — the blocked message should not
+        // change the snippet, date, or read status shown in the normal conversation list.
+        val existingConv = context.conversationsDB.getConversationWithThreadId(mms.threadId)
+        if (existingConv == null) {
+            val conversation = context.getConversations(mms.threadId).firstOrNull()
+            if (conversation != null) {
+                val readConv = conversation.copy(read = true, unreadCount = 0)
+                runCatching { context.conversationsDB.insertOrUpdate(readConv) }
+            } else {
                 val newConversation = Conversation(
                     threadId = mms.threadId,
                     snippet = mms.body,
                     date = mms.date,
-                    read = false,
+                    read = true,
                     title = senderName,
                     photoUri = photoUri,
                     isGroupConversation = false,

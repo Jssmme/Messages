@@ -448,7 +448,7 @@ class ThreadActivity : SimpleActivity() {
                         if (config.useRecycleBin) {
                             messagesDB.getNonRecycledThreadMessages(threadId)
                         } else {
-                            messagesDB.getThreadMessages(threadId)
+                            messagesDB.getNonBlockedThreadMessages(threadId)
                         }
                     }
                 )
