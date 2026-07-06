@@ -106,6 +106,7 @@ class SettingsActivity : SimpleActivity() {
         setupLanguage()
         setupManageBlockedNumbers()
         setupManageBlockedKeywords()
+        setupManageWhitelistKeywords()
         setupChangeDateTimeFormat()
         setupFontSize()
         setupShowCharacterCounter()
@@ -222,6 +223,21 @@ class SettingsActivity : SimpleActivity() {
         settingsManageBlockedKeywordsHolder.setOnClickListener {
             if (isOrWasThankYouInstalled()) {
                 Intent(this@SettingsActivity, ManageBlockedKeywordsActivity::class.java).apply {
+                    startActivity(this)
+                }
+            } else {
+                FeatureLockedDialog(this@SettingsActivity) { }
+            }
+        }
+    }
+
+    private fun setupManageWhitelistKeywords() = binding.apply {
+        settingsManageWhitelistKeywords.text =
+            addLockedLabelIfNeeded(R.string.manage_whitelist_keywords)
+
+        settingsManageWhitelistKeywordsHolder.setOnClickListener {
+            if (isOrWasThankYouInstalled()) {
+                Intent(this@SettingsActivity, ManageWhitelistKeywordsActivity::class.java).apply {
                     startActivity(this)
                 }
             } else {

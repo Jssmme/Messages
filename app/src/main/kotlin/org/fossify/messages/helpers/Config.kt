@@ -144,6 +144,23 @@ class Config(context: Context) : BaseConfig(context) {
         set(lastBlockedNumbersExportPath) = prefs.edit()
             .putString(LAST_BLOCKED_KEYWORD_EXPORT_PATH, lastBlockedNumbersExportPath).apply()
 
+    var whitelistKeywords: Set<String>
+        get() = prefs.getStringSet(WHITELIST_KEYWORDS, HashSet<String>())!!
+        set(whitelistKeywords) = prefs.edit().putStringSet(WHITELIST_KEYWORDS, whitelistKeywords).apply()
+
+    fun addWhitelistKeyword(keyword: String) {
+        whitelistKeywords = whitelistKeywords.plus(keyword)
+    }
+
+    fun removeWhitelistKeyword(keyword: String) {
+        whitelistKeywords = whitelistKeywords.minus(keyword)
+    }
+
+    var lastWhitelistKeywordExportPath: String
+        get() = prefs.getString(LAST_WHITELIST_KEYWORD_EXPORT_PATH, "")!!
+        set(lastWhitelistNumbersExportPath) = prefs.edit()
+            .putString(LAST_WHITELIST_KEYWORD_EXPORT_PATH, lastWhitelistNumbersExportPath).apply()
+
     var keepConversationsArchived: Boolean
         get() = prefs.getBoolean(KEEP_CONVERSATIONS_ARCHIVED, false)
         set(keepConversationsArchived) = prefs.edit()

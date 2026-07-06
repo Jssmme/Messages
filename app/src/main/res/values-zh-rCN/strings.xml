@@ -75,6 +75,10 @@
     <string name="manage_blocked_keywords">管理屏蔽关键词</string>
     <string name="not_blocking_keywords">您尚未屏蔽任何关键词。您可以在此处添加关键词，以屏蔽所有包含这些关键词的信息。</string>
     <string name="add_a_blocked_keyword">添加屏蔽关键词</string>
+    <string name="whitelist_keywords">白名单关键词</string>
+    <string name="manage_whitelist_keywords">管理白名单关键词</string>
+    <string name="not_whitelisting_keywords">您尚未添加任何白名单关键词。您可以在此处添加关键词，包含这些关键词的信息将绕过屏蔽关键词直接收入短信列表。</string>
+    <string name="add_a_whitelist_keyword">添加白名单关键词</string>
     <string name="lock_screen_visibility">锁屏通知可见性</string>
     <string name="sender_and_message">发送者和信息</string>
     <string name="sender_only">仅发送者</string>
@@ -116,6 +120,8 @@
     <string name="import_blocked_keywords">导入屏蔽关键词</string>
     <string name="keywords">关键词</string>
     <string name="export_blocked_keywords">导出屏蔽关键词</string>
+    <string name="export_whitelist_keywords">导出白名单关键词</string>
+    <string name="import_whitelist_keywords">导入白名单关键词</string>
     <string name="keep_conversations_archived">保持对话归档状态</string>
     <string name="faq_4_title">为何我的群发信息对接收者来说显示为单独的短信？</string>
     <string name="faq_4_text">您需要在应用设置中启用“将群发信息作为彩信发送”。这将确保群发信息以彩信形式发送，使所有参与者都能看到彼此的回复。</string>
