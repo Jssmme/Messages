@@ -206,9 +206,16 @@ fun Context.getMessages(
         }
     }
 
+    val blockedMessageIds = try {
+        messagesDB.getBlockedMessageIds(threadId).toHashSet()
+    } catch (_: Exception) {
+        emptySet<Long>()
+    }
+
     messages = messages
         .filter { it.participants.isNotEmpty() }
         .filterNot { it.isScheduled && it.millis() < System.currentTimeMillis() }
+        .filterNot { it.id in blockedMessageIds }
         .sortedWith(compareBy<Message> { it.date }.thenBy { it.id })
         .takeLast(limit)
         .toMutableList() as ArrayList<Message>

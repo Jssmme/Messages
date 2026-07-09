@@ -51,6 +51,9 @@ interface MessagesDao {
     @Query("SELECT * FROM blocked_messages WHERE thread_id = :threadId")
     fun getThreadBlockedMessages(threadId: Long): List<BlockedMessage>
 
+    @Query("SELECT id FROM blocked_messages WHERE thread_id = :threadId")
+    fun getBlockedMessageIds(threadId: Long): List<Long>
+
     @Query("SELECT messages.* FROM messages LEFT OUTER JOIN recycle_bin_messages ON messages.id = recycle_bin_messages.id WHERE recycle_bin_messages.id IS NOT NULL AND thread_id = :threadId")
     fun getThreadMessagesFromRecycleBin(threadId: Long): List<Message>
 

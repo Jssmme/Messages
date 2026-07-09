@@ -12,7 +12,6 @@ import org.fossify.commons.helpers.SimpleContactsHelper
 import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.commons.models.PhoneNumber
 import org.fossify.commons.models.SimpleContact
-import org.fossify.messages.extensions.conversationsDB
 import org.fossify.messages.extensions.getConversations
 import org.fossify.messages.extensions.getNameFromAddress
 import org.fossify.messages.extensions.getNotificationBitmap
@@ -27,7 +26,6 @@ import org.fossify.messages.helpers.ReceiverUtils.isMessageFilteredOut
 import org.fossify.messages.helpers.refreshConversations
 import org.fossify.messages.helpers.refreshMessages
 import org.fossify.messages.models.BlockedMessage
-import org.fossify.messages.models.Conversation
 import org.fossify.messages.models.Message
 
 class SmsReceiver : BroadcastReceiver() {
@@ -197,30 +195,12 @@ class SmsReceiver : BroadcastReceiver() {
 
         val photoUri = SimpleContactsHelper(appContext).getPhotoUriFromPhoneNumber(address)
 
-        // Only create the conversation in our DB if it doesn't already exist.
-        // Don't update an existing conversation — the blocked message should not
-        // change the snippet, date, or read status shown in the normal conversation list.
-        val existingConv = appContext.conversationsDB.getConversationWithThreadId(threadId)
-        if (existingConv == null) {
-            val conversation = appContext.getConversations(threadId).firstOrNull()
-            if (conversation != null) {
-                val readConv = conversation.copy(read = true, unreadCount = 0)
-                runCatching { appContext.conversationsDB.insertOrUpdate(readConv) }
-            } else {
-                val newConversation = Conversation(
-                    threadId = threadId,
-                    snippet = body,
-                    date = (date / 1000).toInt(),
-                    read = true,
-                    title = senderName,
-                    photoUri = photoUri,
-                    isGroupConversation = false,
-                    phoneNumber = address,
-                    isArchived = false,
-                    unreadCount = 0
-                )
-                runCatching { appContext.conversationsDB.insertOrUpdate(newConversation) }
-            }
+        // Ensure the conversation exists in the local DB so the blocked-messages screen
+        // can find it via getAllWithBlockedMessages(). We always upsert here; the inbox
+        // query (getNonArchivedWithLatestSnippet) will exclude conversations that have
+        // no normal (non-blocked) messages, so no empty entry will appear in the inbox.
+        appContext.getConversations(threadId).firstOrNull()?.let { conv ->
+            runCatching { appContext.insertOrUpdateConversation(conv) }
         }
 
         val participant = SimpleContact(
