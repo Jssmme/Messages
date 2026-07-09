@@ -493,10 +493,12 @@ private fun Context.queryCursorUnsafe(
 }
 
 fun Context.getConversationIds(): List<Long> {
+    val uri = "${Threads.CONTENT_URI}?simple=true".toUri()
     val projection = arrayOf(Threads._ID)
+    val selection = "${Threads.MESSAGE_COUNT} > 0"
     val sortOrder = "${Threads.DATE} ASC"
     val conversationIds = mutableListOf<Long>()
-    queryCursor(Threads.CONTENT_URI, projection, null, null, sortOrder, true) { cursor ->
+    queryCursor(uri, projection, selection, null, sortOrder, true) { cursor ->
         val id = cursor.getLongValue(Threads._ID)
         conversationIds.add(id)
     }
@@ -629,59 +631,65 @@ fun Context.getThreadParticipants(
     threadId: Long,
     contactsMap: HashMap<Int, SimpleContact>?,
 ): ArrayList<SimpleContact> {
-    MessagingCache.participantsCache.get(threadId)?.let {
-        return it.map { contact ->
-            contact.copy(
-                phoneNumbers = contact.phoneNumbers.toArrayList(),
-                birthdays = contact.birthdays.toArrayList(),
-                anniversaries = contact.anniversaries.toArrayList()
-            )
-        }.toArrayList()
+    val recipientIds = getThreadRecipientIds(threadId)
+    val phoneNumbers = getThreadPhoneNumbers(recipientIds)
+    MessagingCache.participantsCache.get(threadId, phoneNumbers)?.let {
+        return it
     }
 
-    val uri = "${MmsSms.CONTENT_CONVERSATIONS_URI}?simple=true".toUri()
-    val projection = arrayOf(
-        ThreadsColumns.RECIPIENT_IDS
-    )
-    val selection = "${Mms._ID} = ?"
-    val selectionArgs = arrayOf(threadId.toString())
     val participants = ArrayList<SimpleContact>()
-    try {
-        val cursor = contentResolver.query(uri, projection, selection, selectionArgs, null)
-        cursor?.use {
-            if (cursor.moveToFirst()) {
-                val address = cursor.getStringValue(ThreadsColumns.RECIPIENT_IDS)
-                address.split(" ").filter { it.areDigitsOnly() }.forEach {
-                    val addressId = it.toInt()
-                    if (contactsMap?.containsKey(addressId) == true) {
-                        participants.add(contactsMap[addressId]!!)
-                        return@forEach
-                    }
-
-                    val number = getPhoneNumberFromAddressId(addressId)
-                    val namePhoto = getNameAndPhotoFromPhoneNumber(number)
-                    val name = namePhoto.name
-                    val photoUri = namePhoto.photoUri ?: ""
-                    val phoneNumber = PhoneNumber(number, 0, "", number)
-                    val contact = SimpleContact(
-                        rawId = addressId,
-                        contactId = addressId,
-                        name = name,
-                        photoUri = photoUri,
-                        phoneNumbers = arrayListOf(phoneNumber),
-                        birthdays = ArrayList(),
-                        anniversaries = ArrayList()
-                    )
-                    participants.add(contact)
-                }
-            }
+    recipientIds.zip(phoneNumbers).forEach { (addressId, number) ->
+        val cachedContact = contactsMap?.get(addressId)
+        val threadPhoneNumber = cachedContact
+            ?.phoneNumbers
+            ?.firstOrNull { it.normalizedNumber == number }
+        if (cachedContact != null && threadPhoneNumber != null) {
+            participants.add(
+                cachedContact.copy(
+                    phoneNumbers = arrayListOf(threadPhoneNumber.copy()),
+                    birthdays = ArrayList(cachedContact.birthdays),
+                    anniversaries = ArrayList(cachedContact.anniversaries)
+                )
+            )
+            return@forEach
         }
-    } catch (e: Exception) {
-        showErrorToast(e)
+
+        val namePhoto = getNameAndPhotoFromPhoneNumber(number)
+        val name = namePhoto.name
+        val photoUri = namePhoto.photoUri ?: ""
+        val phoneNumber = PhoneNumber(number, 0, "", number)
+        val contact = SimpleContact(
+            rawId = addressId,
+            contactId = addressId,
+            name = name,
+            photoUri = photoUri,
+            phoneNumbers = arrayListOf(phoneNumber),
+            birthdays = ArrayList(),
+            anniversaries = ArrayList()
+        )
+        participants.add(contact)
     }
 
-    MessagingCache.participantsCache.put(threadId, participants)
+    MessagingCache.participantsCache.put(threadId, phoneNumbers, participants)
     return participants
+}
+
+private fun Context.getThreadRecipientIds(threadId: Long): List<Int> {
+    val recipientIds = ArrayList<Int>()
+    queryCursor(
+        uri = "${MmsSms.CONTENT_CONVERSATIONS_URI}?simple=true".toUri(),
+        projection = arrayOf(ThreadsColumns.RECIPIENT_IDS),
+        selection = "${Mms._ID} = ?",
+        selectionArgs = arrayOf(threadId.toString()),
+        showErrors = true
+    ) { cursor ->
+        cursor.getStringValue(ThreadsColumns.RECIPIENT_IDS)
+            .split(" ")
+            .filter { it.areDigitsOnly() }
+            .forEach { recipientIds.add(it.toInt()) }
+    }
+
+    return recipientIds
 }
 
 fun Context.getThreadPhoneNumbers(recipientIds: List<Int>): ArrayList<String> {

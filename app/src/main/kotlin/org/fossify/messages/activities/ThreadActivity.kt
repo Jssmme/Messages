@@ -161,6 +161,7 @@ import org.fossify.messages.extensions.shouldUnarchive
 import org.fossify.messages.extensions.showWithAnimation
 import org.fossify.messages.extensions.subscriptionManagerCompat
 import org.fossify.messages.extensions.toArrayList
+import org.fossify.messages.extensions.toSortedMessages
 import org.fossify.messages.extensions.updateConversationArchivedStatus
 import org.fossify.messages.extensions.updateLastConversationMessage
 import org.fossify.messages.extensions.updateScheduledMessagesThreadId
@@ -217,12 +218,12 @@ class ThreadActivity : SimpleActivity() {
     private var currentSIMCardIndex = 0
     private var isActivityVisible = false
     private var refreshedSinceSent = false
-    private var threadItems = ArrayList<ThreadItem>()
+    private var threadItems: List<ThreadItem> = emptyList()
     private var bus: EventBus? = null
     private var conversation: Conversation? = null
     private var participants = ArrayList<SimpleContact>()
     private var privateContacts = ArrayList<SimpleContact>()
-    private var messages = ArrayList<Message>()
+    private var messages: List<Message> = emptyList()
     private val availableSIMCards = ArrayList<SIMCard>()
     private var pendingAttachmentsToSave: List<Attachment>? = null
     private var capturedImageUri: Uri? = null
@@ -452,21 +453,19 @@ class ThreadActivity : SimpleActivity() {
     private fun setupCachedMessages(callback: () -> Unit) {
         ensureBackgroundThread {
             messages = try {
-                ArrayList(
-                    if (isRecycleBin) {
-                        messagesDB.getThreadMessagesFromRecycleBin(threadId)
-                    } else if (isBlocked) {
-                        messagesDB.getThreadBlockedMessages(threadId).map { it.toMessage() }
+                if (isRecycleBin) {
+                    messagesDB.getThreadMessagesFromRecycleBin(threadId)
+                } else if (isBlocked) {
+                    messagesDB.getThreadBlockedMessages(threadId).map { it.toMessage() }
+                } else {
+                    if (config.useRecycleBin) {
+                        messagesDB.getNonRecycledThreadMessages(threadId)
                     } else {
-                        if (config.useRecycleBin) {
-                            messagesDB.getNonRecycledThreadMessages(threadId)
-                        } else {
-                            messagesDB.getThreadMessages(threadId)
-                        }
+                        messagesDB.getThreadMessages(threadId)
                     }
-                )
+                }
             } catch (e: Exception) {
-                ArrayList()
+                emptyList()
             }
 
             // Load block reasons for highlighting when viewing the blocked repository.
@@ -479,11 +478,11 @@ class ThreadActivity : SimpleActivity() {
             }
 
             clearExpiredScheduledMessages(threadId, messages)
-            messages.removeAll { it.isScheduled && it.millis() < System.currentTimeMillis() }
-
-            messages.sortBy { it.date }
+            messages = messages
+                .filterNot { it.isScheduled && it.millis() < System.currentTimeMillis() }
+                .toSortedMessages()
             if (messages.size > MESSAGES_LIMIT) {
-                messages = ArrayList(messages.takeLast(MESSAGES_LIMIT))
+                messages = messages.takeLast(MESSAGES_LIMIT)
             }
 
             setupParticipants()
@@ -518,21 +517,23 @@ class ThreadActivity : SimpleActivity() {
         ensureBackgroundThread {
             privateContacts = MyContactsContentProvider.getSimpleContacts(this, privateCursor)
 
-            val cachedMessagesCode = messages.clone().hashCode()
+            val cachedMessagesCode = messages.hashCode()
             if (!isRecycleBin && !isBlocked) {
                 messages = getMessages(threadId)
                 if (config.useRecycleBin) {
                     val recycledMessages = messagesDB.getThreadMessagesFromRecycleBin(threadId)
                     messages = messages.filterNotInByKey(recycledMessages) { it.getStableId() }
                 }
+                messages = messages.toSortedMessages()
             }
 
+            val providerParticipantsChanged = reconcileProviderParticipants()
             val hasParticipantWithoutName = participants.any { contact ->
                 contact.phoneNumbers.map { it.normalizedNumber }.contains(contact.name)
             }
 
             try {
-                if (participants.isNotEmpty() && messages.hashCode() == cachedMessagesCode && !hasParticipantWithoutName) {
+                if (canReuseLoadedThread(providerParticipantsChanged, cachedMessagesCode, hasParticipantWithoutName)) {
                     setupAdapter()
                     runOnUiThread { callback() }
                     return@ensureBackgroundThread
@@ -599,6 +600,18 @@ class ThreadActivity : SimpleActivity() {
         }
     }
 
+    private fun canReuseLoadedThread(
+        providerParticipantsChanged: Boolean,
+        cachedMessagesCode: Int,
+        hasParticipantWithoutName: Boolean,
+    ): Boolean {
+        if (providerParticipantsChanged || participants.isEmpty() || hasParticipantWithoutName) {
+            return false
+        }
+
+        return messages.hashCode() == cachedMessagesCode
+    }
+
     private fun getOrCreateThreadAdapter(): ThreadAdapter {
         var currAdapter = binding.threadMessagesList.adapter
         if (currAdapter == null) {
@@ -624,9 +637,10 @@ class ThreadActivity : SimpleActivity() {
     }
 
     private fun setupAdapter() {
-        threadItems = getThreadItems()
+        val latestThreadItems = getThreadItems()
 
         runOnUiThread {
+            threadItems = latestThreadItems
             refreshMenuItems()
             getOrCreateThreadAdapter().apply {
                 if (isBlocked) {
@@ -636,8 +650,9 @@ class ThreadActivity : SimpleActivity() {
                 val lastPosition = itemCount - 1
                 val lastVisiblePosition = layoutManager.findLastVisibleItemPosition()
                 val shouldScrollToBottom =
-                    currentList.lastOrNull() != threadItems.lastOrNull() && lastPosition - lastVisiblePosition == 1
-                updateMessages(threadItems, if (shouldScrollToBottom) lastPosition else -1)
+                    currentList.lastOrNull() != latestThreadItems.lastOrNull() &&
+                            lastPosition - lastVisiblePosition == 1
+                updateMessages(latestThreadItems, if (shouldScrollToBottom) lastPosition else -1)
             }
         }
 
@@ -723,16 +738,20 @@ class ThreadActivity : SimpleActivity() {
         fromRecycleBin: Boolean,
         fromBlocked: Boolean = false,
     ) {
+        val messagesToRemoveSet = messagesToRemove.toSet()
         val deletePosition = threadItems.indexOf(messagesToRemove.first())
-        messages.removeAll(messagesToRemove.toSet())
-        threadItems = getThreadItems()
+        messages = messages.toSortedMessages()
+            .filterNot { it in messagesToRemoveSet }
+        val latestThreadItems = getThreadItems()
+        val hasMessages = messages.isNotEmpty()
 
         runOnUiThread {
-            if (messages.isEmpty()) {
+            threadItems = latestThreadItems
+            if (!hasMessages) {
                 finish()
             } else {
                 getOrCreateThreadAdapter().apply {
-                    updateMessages(threadItems, scrollPosition = deletePosition)
+                    updateMessages(latestThreadItems, scrollPosition = deletePosition)
                     finishActMode()
                 }
             }
@@ -779,24 +798,26 @@ class ThreadActivity : SimpleActivity() {
             loadingOlderMessages = true
             isJumpingToMessage = true
 
-            var cutoff = messages.firstOrNull()?.date ?: Int.MAX_VALUE
+            var cutoff = messages.toSortedMessages().firstOrNull()?.date ?: Int.MAX_VALUE
             var found = false
             var loops = 0
 
             // not the best solution, but this will do for now.
             while (!found && !allMessagesFetched) {
                 if (fetchOlderMessages(cutoff).isEmpty() || loops >= 1000) break
-                cutoff = messages.first().date
-                found = messages.any { it.id == messageId }
+                val messageSnapshot = messages.toSortedMessages()
+                cutoff = messageSnapshot.first().date
+                found = messageSnapshot.any { it.id == messageId }
                 loops++
             }
 
-            threadItems = getThreadItems()
+            val latestThreadItems = getThreadItems()
             runOnUiThread {
+                threadItems = latestThreadItems
                 loadingOlderMessages = false
-                val index = threadItems.indexOfFirst { (it as? Message)?.id == messageId }
+                val index = latestThreadItems.indexOfFirst { (it as? Message)?.id == messageId }
                 getOrCreateThreadAdapter().updateMessages(
-                    newMessages = threadItems, scrollPosition = index, smoothScroll = true
+                    newMessages = latestThreadItems, scrollPosition = index, smoothScroll = true
                 )
                 isJumpingToMessage = false
             }
@@ -812,15 +833,17 @@ class ThreadActivity : SimpleActivity() {
     }
 
     private fun loadMoreMessages() {
-        if (messages.isEmpty() || allMessagesFetched || loadingOlderMessages) return
+        val messageSnapshot = messages.toSortedMessages()
+        if (messageSnapshot.isEmpty() || allMessagesFetched || loadingOlderMessages) return
         loadingOlderMessages = true
-        val cutoff = messages.first().date
+        val cutoff = messageSnapshot.first().date
         ensureBackgroundThread {
             fetchOlderMessages(cutoff)
-            threadItems = getThreadItems()
+            val latestThreadItems = getThreadItems()
             runOnUiThread {
+                threadItems = latestThreadItems
                 loadingOlderMessages = false
-                getOrCreateThreadAdapter().updateMessages(threadItems)
+                getOrCreateThreadAdapter().updateMessages(latestThreadItems)
             }
         }
     }
@@ -830,17 +853,15 @@ class ThreadActivity : SimpleActivity() {
             allMessagesFetched = true
             return emptyList()
         }
-        val older = getMessages(threadId, cutoff)
-            .filterNotInByKey(messages) { it.getStableId() }
+        val olderFromProvider = getMessages(threadId, cutoff)
+        val messageSnapshot = messages.toSortedMessages()
+        val older = olderFromProvider.filterNotInByKey(messageSnapshot) { it.getStableId() }
 
         if (older.isEmpty()) {
             allMessagesFetched = true
         }
 
-        if (older.isNotEmpty()) {
-            messages.addAll(0, older)
-        }
-
+        messages = (older + messageSnapshot).toSortedMessages()
         return older
     }
 
@@ -1011,6 +1032,32 @@ class ThreadActivity : SimpleActivity() {
         }
     }
 
+    private fun hasOnlyScheduledMessages(): Boolean {
+        return messages.isNotEmpty() && messages.all { it.isScheduled }
+    }
+
+    private fun getProviderThreadParticipants(): ArrayList<SimpleContact>? {
+        if (isRecycleBin || threadId <= 0L || hasOnlyScheduledMessages()) {
+            return null
+        }
+
+        return getThreadParticipants(threadId, null).takeIf { it.isNotEmpty() }
+    }
+
+    private fun reconcileProviderParticipants(): Boolean {
+        val providerParticipants = getProviderThreadParticipants() ?: return false
+        val participantsChanged = participants.getAddresses() != providerParticipants.getAddresses()
+        participants = providerParticipants
+
+        if (participantsChanged) {
+            runOnUiThread {
+                maybeDisableShortCodeReply()
+            }
+        }
+
+        return participantsChanged
+    }
+
     private fun setupParticipants() {
         if (participants.isEmpty()) {
             participants = if (messages.isEmpty()) {
@@ -1018,7 +1065,7 @@ class ThreadActivity : SimpleActivity() {
                 val participants = getThreadParticipants(threadId, null)
                 fixParticipantNumbers(participants, intentNumbers)
             } else {
-                messages.first().participants
+                getProviderThreadParticipants() ?: messages.first().participants
             }
             runOnUiThread {
                 maybeDisableShortCodeReply()
@@ -1358,14 +1405,24 @@ class ThreadActivity : SimpleActivity() {
         }
     }
 
+    private fun shouldShowThreadDateTime(
+        message: Message,
+        prevDateTime: Int,
+        prevSIMId: Int,
+    ): Boolean {
+        val isSentFromDifferentKnownSIM =
+            prevSIMId != -1 && message.subscriptionId != -1 && prevSIMId != message.subscriptionId
+        return message.date - prevDateTime > MIN_DATE_TIME_DIFF_SECS || isSentFromDifferentKnownSIM
+    }
+
     @SuppressLint("MissingPermission")
-    private fun getThreadItems(): ArrayList<ThreadItem> {
-        val items = ArrayList<ThreadItem>()
+    private fun getThreadItems(): List<ThreadItem> {
         if (isFinishing) {
-            return items
+            return emptyList()
         }
 
-        messages.sortBy { it.date }
+        val messageSnapshot = messages.toSortedMessages()
+        val items = ArrayList<ThreadItem>()
 
         val subscriptionIdToSimId = HashMap<Int, String>()
         subscriptionIdToSimId[-1] = "?"
@@ -1376,14 +1433,12 @@ class ThreadActivity : SimpleActivity() {
         var prevDateTime = 0
         var prevSIMId = -2
         var hadUnreadItems = false
-        val cnt = messages.size
+        val cnt = messageSnapshot.size
         for (i in 0 until cnt) {
-            val message = messages.getOrNull(i) ?: continue
+            val message = messageSnapshot.getOrNull(i) ?: continue
             // do not show the date/time above every message, only if the difference between the 2 messages is at least MIN_DATE_TIME_DIFF_SECS,
             // or if the message is sent from a different SIM
-            val isSentFromDifferentKnownSIM =
-                prevSIMId != -1 && message.subscriptionId != -1 && prevSIMId != message.subscriptionId
-            if (message.date - prevDateTime > MIN_DATE_TIME_DIFF_SECS || isSentFromDifferentKnownSIM) {
+            if (shouldShowThreadDateTime(message, prevDateTime, prevSIMId)) {
                 val simCardID = subscriptionIdToSimId[message.subscriptionId] ?: "?"
                 items.add(ThreadDateTime(message.date, simCardID))
                 prevDateTime = message.date
@@ -1683,8 +1738,9 @@ class ThreadActivity : SimpleActivity() {
             refreshedSinceSent = false
             sendMessageCompat(text, addresses, subscriptionId, attachments, messageToResend)
             ensureBackgroundThread {
+                val existingMessages = messages.toSortedMessages()
                 val messages = getMessages(threadId, limit = maxOf(1, attachments.size))
-                    .filterNotInByKey(messages) { it.getStableId() }
+                    .filterNotInByKey(existingMessages) { it.getStableId() }
                 for (message in messages) {
                     insertOrUpdateMessage(message)
                 }
@@ -1707,15 +1763,18 @@ class ThreadActivity : SimpleActivity() {
     }
 
     private fun insertOrUpdateMessage(message: Message) {
-        if (messages.map { it.id }.contains(message.id)) {
-            val messageToReplace = messages.find { it.id == message.id }
-            messages[messages.indexOf(messageToReplace)] = message
+        val updatedMessages = messages.toSortedMessages().toMutableList()
+        val messageIndex = updatedMessages.indexOfFirst { it.id == message.id }
+        if (messageIndex != -1) {
+            updatedMessages[messageIndex] = message
         } else {
-            messages.add(message)
+            updatedMessages.add(message)
         }
+        messages = updatedMessages.toSortedMessages()
 
         val newItems = getThreadItems()
         runOnUiThread {
+            threadItems = newItems
             getOrCreateThreadAdapter().updateMessages(newItems, newItems.lastIndex)
             if (!refreshedSinceSent) {
                 refreshMessages()
@@ -1866,14 +1925,16 @@ class ThreadActivity : SimpleActivity() {
             notificationManager.cancel(threadId.hashCode())
         }
 
-        val lastMaxId = messages.filterNot { it.isScheduled }.maxByOrNull { it.id }?.id ?: 0L
+        val messageSnapshot = messages.toSortedMessages()
+        val lastMaxId = messageSnapshot.filterNot { it.isScheduled }.maxByOrNull { it.id }?.id ?: 0L
+        val providerParticipantsChanged = reconcileProviderParticipants()
         val newThreadId = getThreadId(participants.getAddresses().toSet())
         val newMessages = getMessages(newThreadId, includeScheduledMessages = false)
-        if (messages.isNotEmpty() && messages.all { it.isScheduled } && newMessages.isNotEmpty()) {
+        if (messageSnapshot.isNotEmpty() && messageSnapshot.all { it.isScheduled } && newMessages.isNotEmpty()) {
             // update scheduled messages with real thread id
             threadId = newThreadId
             updateScheduledMessagesThreadId(
-                messages = messages.filter { it.threadId != threadId },
+                messages = messageSnapshot.filter { it.threadId != threadId },
                 newThreadId = threadId
             )
         }
@@ -1886,7 +1947,7 @@ class ThreadActivity : SimpleActivity() {
                 val recycledMessages = messagesDB.getThreadMessagesFromRecycleBin(threadId).toSet()
                 removeAll(recycledMessages)
             }
-        }
+        }.toSortedMessages()
 
         messages.filter { !it.isScheduled && !it.isReceivedMessage() && it.id > lastMaxId }
             .forEach { latestMessage ->
@@ -1895,6 +1956,9 @@ class ThreadActivity : SimpleActivity() {
 
         setupAdapter()
         runOnUiThread {
+            if (providerParticipantsChanged) {
+                setupThreadTitle()
+            }
             setupSIMSelector()
         }
     }
@@ -1930,7 +1994,8 @@ class ThreadActivity : SimpleActivity() {
                 TYPE_DELETE -> cancelScheduledMessageAndRefresh(message.id)
                 TYPE_EDIT -> editScheduledMessage(message)
                 TYPE_SEND -> {
-                    messages.removeAll { message.id == it.id }
+                    messages = messages.toSortedMessages()
+                        .filterNot { message.id == it.id }
                     extractAttachments(message)
                     sendNormalMessage(message.body, message.subscriptionId)
                     cancelScheduledMessageAndRefresh(message.id)
