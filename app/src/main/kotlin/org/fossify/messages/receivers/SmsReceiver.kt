@@ -23,6 +23,7 @@ import org.fossify.messages.extensions.shouldUnarchive
 import org.fossify.messages.extensions.showReceivedMessageNotification
 import org.fossify.messages.extensions.updateConversationArchivedStatus
 import org.fossify.messages.helpers.ReceiverUtils.isMessageFilteredOut
+import org.fossify.messages.helpers.ReceiverUtils.recordBlockReasons
 import org.fossify.messages.helpers.refreshConversations
 import org.fossify.messages.helpers.refreshMessages
 import org.fossify.messages.models.BlockedMessage
@@ -62,7 +63,9 @@ class SmsReceiver : BroadcastReceiver() {
                         subject = subject,
                         body = body,
                         subscriptionId = intent.getIntExtra("subscription", -1),
-                        status = status
+                        status = status,
+                        isBlockedNumber = isBlockedNumber,
+                        isBlockedUnknown = isBlockedUnknown
                     )
                     return@ensureBackgroundThread
                 }
@@ -172,7 +175,9 @@ class SmsReceiver : BroadcastReceiver() {
         subject: String,
         body: String,
         subscriptionId: Int,
-        status: Int
+        status: Int,
+        isBlockedNumber: Boolean,
+        isBlockedUnknown: Boolean
     ) {
         val date = System.currentTimeMillis()
         val threadId = appContext.getThreadId(address)
@@ -232,6 +237,17 @@ class SmsReceiver : BroadcastReceiver() {
 
         appContext.messagesDB.insertBlockedMessage(
             BlockedMessage.fromMessage(message, System.currentTimeMillis())
+        )
+
+        // Record all block reasons (keyword hits + number/unknown hits) for later highlighting.
+        recordBlockReasons(
+            context = appContext,
+            messageId = newMessageId,
+            threadId = threadId,
+            address = address,
+            body = body,
+            isBlockedNumber = isBlockedNumber,
+            isBlockedUnknown = isBlockedUnknown
         )
 
         refreshConversations()

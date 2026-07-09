@@ -22,6 +22,7 @@ import org.fossify.messages.extensions.shouldUnarchive
 import org.fossify.messages.extensions.showReceivedMessageNotification
 import org.fossify.messages.extensions.updateConversationArchivedStatus
 import org.fossify.messages.helpers.ReceiverUtils.isMessageFilteredOut
+import org.fossify.messages.helpers.ReceiverUtils.recordBlockReasons
 import org.fossify.messages.helpers.refreshConversations
 import org.fossify.messages.helpers.refreshMessages
 import org.fossify.messages.models.BlockedMessage
@@ -55,7 +56,7 @@ class MmsReceiver : MmsReceivedReceiver() {
             }
 
             if (isFilteredByKeyword || isBlockedNumber || isBlockedUnknown) {
-                handleBlockedMmsMessage(context, mms, address)
+                handleBlockedMmsMessage(context, mms, address, isBlockedNumber, isBlockedUnknown)
             } else {
                 handleMmsMessage(context, mms, size, address)
             }
@@ -109,7 +110,9 @@ class MmsReceiver : MmsReceivedReceiver() {
     private fun handleBlockedMmsMessage(
         context: Context,
         mms: Message,
-        address: String
+        address: String,
+        isBlockedNumber: Boolean,
+        isBlockedUnknown: Boolean
     ) {
         val senderName = context.getMyContactsCursor(favoritesOnly = false, withPhoneNumbersOnly = true).use {
             context.getNameFromAddress(address, it)
@@ -134,6 +137,17 @@ class MmsReceiver : MmsReceivedReceiver() {
         val readMms = mms.copy(read = true)
         context.messagesDB.insertBlockedMessage(
             BlockedMessage.fromMessage(readMms, System.currentTimeMillis())
+        )
+
+        // Record all block reasons at interception time.
+        recordBlockReasons(
+            context = context,
+            messageId = mms.id,
+            threadId = mms.threadId,
+            address = address,
+            body = mms.body,
+            isBlockedNumber = isBlockedNumber,
+            isBlockedUnknown = isBlockedUnknown
         )
 
         // Only create the conversation in our DB if it doesn't already exist.

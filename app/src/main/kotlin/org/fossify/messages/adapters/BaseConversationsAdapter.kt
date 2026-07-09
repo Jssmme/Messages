@@ -1,8 +1,12 @@
 package org.fossify.messages.adapters
 
 import android.annotation.SuppressLint
+import android.graphics.Color
 import android.graphics.Typeface
 import android.os.Parcelable
+import android.text.Spannable
+import android.text.SpannableString
+import android.text.style.ForegroundColorSpan
 import android.util.TypedValue
 import android.view.View
 import android.view.ViewGroup
@@ -27,6 +31,7 @@ import org.fossify.messages.databinding.ItemConversationBinding
 import org.fossify.messages.extensions.config
 import org.fossify.messages.extensions.getAllDrafts
 import org.fossify.messages.models.Conversation
+import org.fossify.messages.models.BlockReason
 
 @Suppress("LeakingThis")
 abstract class BaseConversationsAdapter(
@@ -46,6 +51,13 @@ abstract class BaseConversationsAdapter(
     private var drafts = HashMap<Long, String>()
 
     private var recyclerViewState: Parcelable? = null
+
+    /**
+     * Map of thread-id → list of block reasons, populated only by the blocked
+     * conversations screen.  When non-empty, [setupView] highlights the matched
+     * keyword / sender number in red on the conversation list item.
+     */
+    private var blockReasonsMap: Map<Long, List<BlockReason>> = emptyMap()
 
     init {
         setupDragListener(true)
@@ -74,6 +86,16 @@ abstract class BaseConversationsAdapter(
     ) {
         saveRecyclerViewState()
         submitList(newConversations.toList(), commitCallback)
+    }
+
+    /**
+     * Updates the block-reasons map and refreshes visible items so that red
+     * highlighting is applied on the conversation list.  Should be called on
+     * the main thread.
+     */
+    fun updateBlockReasons(reasons: Map<Long, List<BlockReason>>) {
+        blockReasonsMap = reasons
+        notifyItemRangeChanged(0, itemCount)
     }
 
     @SuppressLint("NotifyDataSetChanged")
@@ -164,6 +186,9 @@ abstract class BaseConversationsAdapter(
                 setTextSize(TypedValue.COMPLEX_UNIT_PX, fontSize * 0.9f)
             }
 
+            // Apply block-reason highlighting on the conversation list item.
+            applyBlockReasonHighlighting(conversation, conversationAddress, conversationBodyShort)
+
             conversationDate.apply {
                 text = (conversation.date * 1000L).formatDateOrTime(
                     context = context,
@@ -205,6 +230,95 @@ abstract class BaseConversationsAdapter(
                 placeholderName = conversation.title,
                 placeholderImage = placeholder
             )
+        }
+    }
+
+    /**
+     * Highlights block reasons in red on the conversation list item.
+     *
+     * - KEYWORD reasons: highlights the matched text inside the snippet
+     *   ([conversationBodyShort]).  Because the snippet may be a truncated copy
+     *   of the full message body, the original [matchStart]/[matchEnd] offsets
+     *   may be out of range — in that case we fall back to searching for
+     *   [matchedText] inside the snippet.
+     * - NUMBER reasons: highlights the matched sender number inside the title
+     *   ([conversationAddress]).
+     */
+    private fun applyBlockReasonHighlighting(
+        conversation: Conversation,
+        addressView: TextView,
+        bodyView: TextView,
+    ) {
+        val reasons = blockReasonsMap[conversation.threadId] ?: return
+        if (reasons.isEmpty()) return
+
+        // --- KEYWORD highlighting on the snippet ---
+        val keywordReasons = reasons.filter { it.ruleType == BlockReason.TYPE_KEYWORD }
+        if (keywordReasons.isNotEmpty() && bodyView.text.isNotEmpty()) {
+            val snippet = bodyView.text.toString()
+            val spannable = SpannableString(snippet)
+            var appliedAny = false
+            for (reason in keywordReasons) {
+                val matchedText = reason.matchedText
+                if (matchedText.isEmpty()) continue
+
+                // Try the original offsets first; if they fall within the
+                // snippet, use them directly.
+                val start = reason.matchStart
+                val end = reason.matchEnd
+                val range = if (start != null && end != null &&
+                    start in 0 until end && end <= snippet.length
+                ) {
+                    start to end
+                } else {
+                    // Offsets are out of range (snippet was truncated) — search
+                    // for the matched text inside the snippet instead.
+                    val idx = snippet.indexOf(matchedText)
+                    if (idx >= 0) {
+                        idx to (idx + matchedText.length)
+                    } else {
+                        null
+                    }
+                }
+
+                if (range != null) {
+                    spannable.setSpan(
+                        ForegroundColorSpan(Color.RED),
+                        range.first,
+                        range.second,
+                        Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+                    )
+                    appliedAny = true
+                }
+            }
+            if (appliedAny) {
+                bodyView.text = spannable
+            }
+        }
+
+        // --- NUMBER highlighting on the sender address ---
+        val numberReasons = reasons.filter { it.ruleType == BlockReason.TYPE_NUMBER }
+        if (numberReasons.isNotEmpty() && addressView.text.isNotEmpty()) {
+            val title = addressView.text.toString()
+            var appliedAny = false
+            val spannable = SpannableString(title)
+            for (reason in numberReasons) {
+                val matchedText = reason.matchedText
+                if (matchedText.isEmpty()) continue
+                val idx = title.indexOf(matchedText)
+                if (idx >= 0) {
+                    spannable.setSpan(
+                        ForegroundColorSpan(Color.RED),
+                        idx,
+                        idx + matchedText.length,
+                        Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+                    )
+                    appliedAny = true
+                }
+            }
+            if (appliedAny) {
+                addressView.text = spannable
+            }
         }
     }
 

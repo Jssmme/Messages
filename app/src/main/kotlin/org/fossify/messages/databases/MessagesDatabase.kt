@@ -10,11 +10,13 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import org.fossify.messages.helpers.Converters
 import org.fossify.messages.interfaces.AttachmentsDao
+import org.fossify.messages.interfaces.BlockReasonsDao
 import org.fossify.messages.interfaces.ConversationsDao
 import org.fossify.messages.interfaces.DraftsDao
 import org.fossify.messages.interfaces.MessageAttachmentsDao
 import org.fossify.messages.interfaces.MessagesDao
 import org.fossify.messages.models.Attachment
+import org.fossify.messages.models.BlockReason
 import org.fossify.messages.models.BlockedMessage
 import org.fossify.messages.models.Conversation
 import org.fossify.messages.models.Draft
@@ -30,9 +32,10 @@ import org.fossify.messages.models.RecycleBinMessage
         Message::class,
         RecycleBinMessage::class,
         BlockedMessage::class,
+        BlockReason::class,
         Draft::class
     ],
-    version = 12
+    version = 14
 )
 @TypeConverters(Converters::class)
 abstract class MessagesDatabase : RoomDatabase() {
@@ -46,6 +49,8 @@ abstract class MessagesDatabase : RoomDatabase() {
     abstract fun MessagesDao(): MessagesDao
 
     abstract fun DraftsDao(): DraftsDao
+
+    abstract fun BlockReasonsDao(): BlockReasonsDao
 
     companion object {
         private var db: MessagesDatabase? = null
@@ -71,6 +76,8 @@ abstract class MessagesDatabase : RoomDatabase() {
                             .addMigrations(MIGRATION_9_10)
                             .addMigrations(MIGRATION_10_11)
                             .addMigrations(MIGRATION_11_12)
+                            .addMigrations(MIGRATION_12_13)
+                            .addMigrations(MIGRATION_13_14)
                             .build()
                     }
                 }
@@ -221,6 +228,46 @@ abstract class MessagesDatabase : RoomDatabase() {
                     execSQL("DROP TABLE `blocked_messages`")
                     execSQL("ALTER TABLE `blocked_messages_new` RENAME TO `blocked_messages`")
                     execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_blocked_messages_id` ON `blocked_messages` (`id`)")
+                }
+            }
+        }
+
+        private val MIGRATION_12_13 = object : Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.apply {
+                    execSQL(
+                        "CREATE TABLE IF NOT EXISTS `block_reasons` (" +
+                            "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                            "`message_id` INTEGER NOT NULL, " +
+                            "`thread_id` INTEGER NOT NULL, " +
+                            "`rule_type` TEXT NOT NULL, " +
+                            "`matched_text` TEXT NOT NULL, " +
+                            "`match_start` INTEGER, " +
+                            "`match_end` INTEGER)"
+                    )
+                    execSQL("CREATE INDEX IF NOT EXISTS `index_block_reasons_message_id` ON `block_reasons` (`message_id`)")
+                    execSQL("CREATE INDEX IF NOT EXISTS `index_block_reasons_thread_id` ON `block_reasons` (`thread_id`)")
+                }
+            }
+        }
+
+        private val MIGRATION_13_14 = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // No schema change — ensures existing block_reasons data is preserved
+                // instead of being destroyed by fallbackToDestructiveMigration().
+                db.apply {
+                    execSQL(
+                        "CREATE TABLE IF NOT EXISTS `block_reasons` (" +
+                            "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                            "`message_id` INTEGER NOT NULL, " +
+                            "`thread_id` INTEGER NOT NULL, " +
+                            "`rule_type` TEXT NOT NULL, " +
+                            "`matched_text` TEXT NOT NULL, " +
+                            "`match_start` INTEGER, " +
+                            "`match_end` INTEGER)"
+                    )
+                    execSQL("CREATE INDEX IF NOT EXISTS `index_block_reasons_message_id` ON `block_reasons` (`message_id`)")
+                    execSQL("CREATE INDEX IF NOT EXISTS `index_block_reasons_thread_id` ON `block_reasons` (`thread_id`)")
                 }
             }
         }

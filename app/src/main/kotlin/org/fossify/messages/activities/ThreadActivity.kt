@@ -8,6 +8,7 @@ import android.content.Intent
 import android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
 import android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION
 import android.content.res.ColorStateList
+import android.graphics.Color
 import android.graphics.drawable.LayerDrawable
 import android.net.Uri
 import android.os.Bundle
@@ -20,11 +21,14 @@ import android.provider.Telephony.Sms.STATUS_NONE
 import android.telephony.SmsManager
 import android.telephony.SmsMessage
 import android.telephony.SubscriptionInfo
+import android.text.Spannable
+import android.text.SpannableString
 import android.text.TextUtils
 import android.text.format.DateUtils
 import android.text.format.DateUtils.FORMAT_NO_YEAR
 import android.text.format.DateUtils.FORMAT_SHOW_DATE
 import android.text.format.DateUtils.FORMAT_SHOW_TIME
+import android.text.style.ForegroundColorSpan
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.KeyEvent
@@ -114,6 +118,7 @@ import org.fossify.messages.databinding.ItemSelectedContactBinding
 import org.fossify.messages.dialogs.InvalidNumberDialog
 import org.fossify.messages.dialogs.RenameConversationDialog
 import org.fossify.messages.dialogs.ScheduleMessageDialog
+import org.fossify.messages.extensions.blockReasonsDB
 import org.fossify.messages.extensions.clearExpiredScheduledMessages
 import org.fossify.messages.extensions.config
 import org.fossify.messages.extensions.conversationsDB
@@ -190,6 +195,7 @@ import org.fossify.messages.messaging.scheduleMessage
 import org.fossify.messages.messaging.sendMessageCompat
 import org.fossify.messages.models.Attachment
 import org.fossify.messages.models.AttachmentSelection
+import org.fossify.messages.models.BlockReason
 import org.fossify.messages.models.Conversation
 import org.fossify.messages.models.Events
 import org.fossify.messages.models.Message
@@ -225,6 +231,13 @@ class ThreadActivity : SimpleActivity() {
     private var isJumpingToMessage = false
     private var isRecycleBin = false
     private var isBlocked = false
+
+    /**
+     * Block reasons for the current thread, keyed by message id.
+     * Populated when [isBlocked] is true; used by the adapter for highlighting.
+     */
+    private var blockReasonsMap: Map<Long, List<BlockReason>> = emptyMap()
+
     private var isLaunchedFromShortcut = false
 
     private var isScheduledMessage: Boolean = false
@@ -455,6 +468,16 @@ class ThreadActivity : SimpleActivity() {
             } catch (e: Exception) {
                 ArrayList()
             }
+
+            // Load block reasons for highlighting when viewing the blocked repository.
+            if (isBlocked) {
+                blockReasonsMap = try {
+                    blockReasonsDB.getReasonsForThread(threadId).groupBy { it.messageId }
+                } catch (e: Exception) {
+                    emptyMap()
+                }
+            }
+
             clearExpiredScheduledMessages(threadId, messages)
             messages.removeAll { it.isScheduled && it.millis() < System.currentTimeMillis() }
 
@@ -606,6 +629,9 @@ class ThreadActivity : SimpleActivity() {
         runOnUiThread {
             refreshMenuItems()
             getOrCreateThreadAdapter().apply {
+                if (isBlocked) {
+                    updateBlockReasons(blockReasonsMap)
+                }
                 val layoutManager = binding.threadMessagesList.layoutManager as LinearLayoutManager
                 val lastPosition = itemCount - 1
                 val lastVisiblePosition = layoutManager.findLastVisibleItemPosition()
@@ -1029,11 +1055,37 @@ class ThreadActivity : SimpleActivity() {
 
     private fun setupThreadTitle() {
         val title = conversation?.title
-        binding.threadToolbar.title = if (!title.isNullOrEmpty()) {
+        val titleText = if (!title.isNullOrEmpty()) {
             title
         } else {
             participants.getThreadTitle()
         }
+
+        // When viewing the blocked repository, if any message was blocked because of a
+        // NUMBER rule, highlight the sender number portion of the title in red.
+        if (isBlocked && blockReasonsMap.isNotEmpty()) {
+            val hasNumberHit = blockReasonsMap.values.flatten().any {
+                it.ruleType == BlockReason.TYPE_NUMBER
+            }
+            if (hasNumberHit) {
+                val firstPhoneNumber = participants.firstOrNull()?.phoneNumbers?.firstOrNull()?.normalizedNumber
+                val numberToHighlight = firstPhoneNumber ?: participants.firstOrNull()?.phoneNumbers?.firstOrNull()?.value
+                if (numberToHighlight != null && titleText.contains(numberToHighlight)) {
+                    val spannable = SpannableString(titleText)
+                    val start = titleText.indexOf(numberToHighlight)
+                    spannable.setSpan(
+                        ForegroundColorSpan(Color.RED),
+                        start,
+                        start + numberToHighlight.length,
+                        Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+                    )
+                    binding.threadToolbar.title = spannable
+                    return
+                }
+            }
+        }
+
+        binding.threadToolbar.title = titleText
     }
 
     @SuppressLint("MissingPermission")

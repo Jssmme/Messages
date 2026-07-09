@@ -5,6 +5,9 @@ import android.content.Intent
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.Drawable
+import android.text.Spannable
+import android.text.SpannableString
+import android.text.style.ForegroundColorSpan
 import android.util.TypedValue
 import android.view.Menu
 import android.view.View
@@ -81,6 +84,7 @@ import org.fossify.messages.helpers.generateStableId
 import org.fossify.messages.helpers.setupDocumentPreview
 import org.fossify.messages.helpers.setupVCardPreview
 import org.fossify.messages.models.Attachment
+import org.fossify.messages.models.BlockReason
 import org.fossify.messages.models.Message
 import org.fossify.messages.models.ThreadItem
 import org.fossify.messages.models.ThreadItem.ThreadDateTime
@@ -98,6 +102,12 @@ class ThreadAdapter(
     val deleteMessages: (messages: List<Message>, toRecycleBin: Boolean, fromRecycleBin: Boolean, fromBlocked: Boolean) -> Unit
 ) : MyRecyclerViewListAdapter<ThreadItem>(activity, recyclerView, ThreadItemDiffCallback(), itemClick) {
     private var fontSize = activity.getTextSize()
+
+    /**
+     * Map of message-id → list of block reasons, populated when [isBlocked] is true.
+     * Used to highlight the exact text fragments that triggered the block.
+     */
+    private var blockReasonsMap: Map<Long, List<BlockReason>> = emptyMap()
 
     @SuppressLint("MissingPermission")
     private val hasMultipleSIMCards = (activity.subscriptionManagerCompat().activeSubscriptionInfoList?.size ?: 0) > 1
@@ -368,6 +378,15 @@ class ThreadAdapter(
         }
     }
 
+    /**
+     * Updates the block-reasons map and refreshes visible items so that highlighting
+     * is applied.  Should be called on the main thread.
+     */
+    fun updateBlockReasons(reasons: Map<Long, List<BlockReason>>) {
+        blockReasonsMap = reasons
+        notifyItemRangeChanged(0, itemCount)
+    }
+
     private fun setupView(holder: ViewHolder, view: View, message: Message) {
         ItemMessageBinding.bind(view).apply {
             threadMessageHolder.isSelected = selectedKeys.contains(message.getSelectionKey())
@@ -383,6 +402,11 @@ class ThreadAdapter(
                 setOnClickListener {
                     holder.viewClicked(message)
                 }
+            }
+
+            // Apply block-reason highlighting when viewing the blocked repository.
+            if (isBlocked) {
+                applyBlockReasonHighlighting(this, message)
             }
 
             if (message.isReceivedMessage()) {
@@ -408,6 +432,43 @@ class ThreadAdapter(
                 threadMessageAttachmentsHolder.beGone()
                 threadMessagePlayOutline.beGone()
             }
+        }
+    }
+
+    /**
+     * Highlights all KEYWORD-type block reasons in the message body text using red
+     * foreground colour.  NUMBER-type reasons are not highlighted in the body (they
+     * are surfaced at the sender-number display level instead).
+     *
+     * Boundary handling: if [matchedText] is empty or the offsets are out of range,
+     * the highlight for that particular reason is silently skipped so that the message
+     * is still displayed normally.
+     */
+    private fun applyBlockReasonHighlighting(binding: ItemMessageBinding, message: Message) {
+        val reasons = blockReasonsMap[message.id] ?: return
+        val keywordReasons = reasons.filter { it.ruleType == BlockReason.TYPE_KEYWORD }
+        if (keywordReasons.isEmpty()) return
+
+        val body = message.body
+        if (body.isEmpty()) return
+
+        val spannable = SpannableString(body)
+        var appliedAny = false
+        for (reason in keywordReasons) {
+            val start = reason.matchStart
+            val end = reason.matchEnd
+            if (start == null || end == null) continue
+            if (start < 0 || end > body.length || start >= end) continue
+            spannable.setSpan(
+                ForegroundColorSpan(Color.RED),
+                start,
+                end,
+                Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+            )
+            appliedAny = true
+        }
+        if (appliedAny) {
+            binding.threadMessageBody.text = spannable
         }
     }
 

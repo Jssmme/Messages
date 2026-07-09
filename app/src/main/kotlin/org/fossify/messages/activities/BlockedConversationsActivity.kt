@@ -15,12 +15,14 @@ import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.messages.R
 import org.fossify.messages.adapters.BlockedConversationsAdapter
 import org.fossify.messages.databinding.ActivityBlockedConversationsBinding
+import org.fossify.messages.extensions.blockReasonsDB
 import org.fossify.messages.extensions.config
 import org.fossify.messages.extensions.conversationsDB
 import org.fossify.messages.extensions.emptyBlockedMessages
 import org.fossify.messages.helpers.IS_BLOCKED
 import org.fossify.messages.helpers.THREAD_ID
 import org.fossify.messages.helpers.THREAD_TITLE
+import org.fossify.messages.models.BlockReason
 import org.fossify.messages.models.Conversation
 import org.fossify.messages.models.Events
 import org.greenrobot.eventbus.EventBus
@@ -82,8 +84,19 @@ class BlockedConversationsActivity : SimpleActivity() {
                 ArrayList()
             }
 
+            val blockReasonsMap = try {
+                val threadIds = conversations.map { it.threadId }
+                if (threadIds.isNotEmpty()) {
+                    blockReasonsDB.getReasonsForThreads(threadIds).groupBy { it.threadId }
+                } else {
+                    emptyMap()
+                }
+            } catch (e: Exception) {
+                emptyMap<Long, List<BlockReason>>()
+            }
+
             runOnUiThread {
-                setupConversations(conversations)
+                setupConversations(conversations, blockReasonsMap)
             }
         }
 
@@ -128,7 +141,10 @@ class BlockedConversationsActivity : SimpleActivity() {
         return currAdapter as BlockedConversationsAdapter
     }
 
-    private fun setupConversations(conversations: ArrayList<Conversation>) {
+    private fun setupConversations(
+        conversations: ArrayList<Conversation>,
+        blockReasonsMap: Map<Long, List<BlockReason>> = emptyMap(),
+    ) {
         val sortedConversations = conversations.sortedWith(
             compareByDescending<Conversation> { config.pinnedConversations.contains(it.threadId.toString()) }
                 .thenByDescending { it.date }
@@ -139,6 +155,7 @@ class BlockedConversationsActivity : SimpleActivity() {
 
         try {
             getOrCreateConversationsAdapter().apply {
+                updateBlockReasons(blockReasonsMap)
                 updateConversations(sortedConversations)
             }
         } catch (ignored: Exception) {

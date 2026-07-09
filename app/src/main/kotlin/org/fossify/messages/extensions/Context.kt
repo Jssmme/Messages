@@ -61,6 +61,7 @@ import org.fossify.messages.helpers.NotificationHelper
 import org.fossify.messages.helpers.ShortcutHelper
 import org.fossify.messages.helpers.generateRandomId
 import org.fossify.messages.interfaces.AttachmentsDao
+import org.fossify.messages.interfaces.BlockReasonsDao
 import org.fossify.messages.interfaces.ConversationsDao
 import org.fossify.messages.interfaces.DraftsDao
 import org.fossify.messages.interfaces.MessageAttachmentsDao
@@ -71,6 +72,7 @@ import org.fossify.messages.messaging.SmsSender
 import org.fossify.messages.messaging.scheduleMessage
 import org.fossify.messages.models.Attachment
 import org.fossify.messages.models.BlockedMessage
+import org.fossify.messages.models.BlockReason
 import org.fossify.messages.models.Conversation
 import org.fossify.messages.models.Draft
 import org.fossify.messages.models.Message
@@ -97,6 +99,9 @@ val Context.messageAttachmentsDB: MessageAttachmentsDao
 
 val Context.messagesDB: MessagesDao
     get() = getMessagesDB().MessagesDao()
+
+val Context.blockReasonsDB: BlockReasonsDao
+    get() = getMessagesDB().BlockReasonsDao()
 
 val Context.draftsDB: DraftsDao
     get() = getMessagesDB().DraftsDao()
@@ -877,6 +882,11 @@ fun Context.deleteConversation(threadId: Long) {
 
     conversationsDB.deleteThreadId(threadId)
     messagesDB.deleteThreadMessages(threadId)
+    try {
+        blockReasonsDB.deleteByThreadId(threadId)
+    } catch (e: Exception) {
+        // best-effort cleanup
+    }
     MessagingCache.participantsCache.remove(threadId)
 
     if (config.customNotifications.contains(threadId.toString())) {
@@ -920,12 +930,22 @@ fun Context.emptyBlockedMessages() {
     for (message in messages) {
         deleteMessage(message.id, message.isMMS)
     }
+    try {
+        blockReasonsDB.deleteAll()
+    } catch (e: Exception) {
+        // best-effort cleanup
+    }
 }
 
 fun Context.emptyBlockedMessagesForConversation(threadId: Long) {
     val messages = messagesDB.getThreadBlockedMessages(threadId)
     for (message in messages) {
         deleteMessage(message.id, message.isMMS)
+    }
+    try {
+        blockReasonsDB.deleteByThreadId(threadId)
+    } catch (e: Exception) {
+        // best-effort cleanup
     }
 }
 
@@ -935,6 +955,11 @@ fun Context.restoreAllMessagesFromBlockedForConversation(threadId: Long) {
         messagesDB.insertOrUpdate(blockedMessage.toMessage())
     }
     messagesDB.deleteThreadBlockedMessages(threadId)
+    try {
+        blockReasonsDB.deleteByThreadId(threadId)
+    } catch (e: Exception) {
+        // best-effort cleanup
+    }
 }
 
 /**
@@ -952,6 +977,22 @@ fun Context.moveMessageToBlocked(id: Long) {
                 BlockedMessage.fromMessage(message, System.currentTimeMillis())
             )
             messagesDB.deleteFromMessages(id)
+            // Record a NUMBER-type block reason since the message is being blocked
+            // because the sender number was added to the blacklist.
+            try {
+                blockReasonsDB.insert(
+                    BlockReason(
+                        messageId = id,
+                        threadId = message.threadId,
+                        ruleType = BlockReason.TYPE_NUMBER,
+                        matchedText = message.senderPhoneNumber,
+                        matchStart = null,
+                        matchEnd = null
+                    )
+                )
+            } catch (e: Exception) {
+                // best-effort
+            }
         }
     } catch (e: Exception) {
         showErrorToast(e)
@@ -965,6 +1006,11 @@ fun Context.restoreMessageFromBlocked(id: Long) {
         if (blockedMessage != null) {
             messagesDB.insertOrUpdate(blockedMessage.toMessage())
             messagesDB.deleteFromBlockedMessages(id)
+            try {
+                blockReasonsDB.deleteByMessageId(id)
+            } catch (e: Exception) {
+                // best-effort cleanup
+            }
         }
     } catch (e: Exception) {
         showErrorToast(e)
@@ -1032,6 +1078,11 @@ fun Context.deleteMessage(id: Long, isMMS: Boolean) {
     try {
         contentResolver.delete(uri, selection, selectionArgs)
         messagesDB.delete(id)
+        try {
+            blockReasonsDB.deleteByMessageId(id)
+        } catch (e: Exception) {
+            // best-effort cleanup
+        }
     } catch (e: Exception) {
         showErrorToast(e)
     }
